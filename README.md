@@ -44,13 +44,13 @@ Run the tool with the following options:
 #### **Example Commands**
 - **Basic IP Lookup**:
   ```bash
-  ./internetdb_tool -filename ips.txt -output json
+  ./gorich -filename ips.txt -output json
   ```
 - **With Proxy Support**:
   ```bash
-  ./internetdb_tool -filename ips.txt -proxy http://localhost:8080 -output ndjson
+  ./gorich -filename ips.txt -proxy http://localhost:8080 -output ndjson
   ```
 - **Streaming Input from stdin**:
   ```bash
-  cat ips.txt | ./internetdb_tool -filename - -output shell
+  cat ips.txt | ./gorich -filename - -output shell
   ```
