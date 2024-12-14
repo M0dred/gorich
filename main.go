@@ -33,10 +33,11 @@ type Host struct {
 }
 
 type Config struct {
-	OutputFormat string
-	Proxy        string
-	Filename     string
-	Concurrency  int
+	OutputFormat       string
+	Proxy              string
+	Filename           string
+	Concurrency        int
+	InsecureSkipVerify bool
 }
 
 func main() {
@@ -45,6 +46,7 @@ func main() {
 	proxy := flag.String("proxy", "", "Proxy URI (HTTP, HTTPS or SOCKS)")
 	filename := flag.String("filename", "", "File containing an IP per line. Use '-' for stdin.")
 	concurrency := flag.Int("concurrency", defaultConcurrency, "Number of concurrent lookups")
+	insecure := flag.Bool("insecure-skip-verify", false, "Skip TLS certificate verification (NOT RECOMMENDED)")
 	flag.Parse()
 
 	if *filename == "" {
@@ -53,14 +55,15 @@ func main() {
 	}
 
 	config := Config{
-		OutputFormat: *output,
-		Proxy:        *proxy,
-		Filename:     *filename,
-		Concurrency:  *concurrency,
+		OutputFormat:       *output,
+		Proxy:              *proxy,
+		Filename:           *filename,
+		Concurrency:        *concurrency,
+		InsecureSkipVerify: *insecure,
 	}
 
 	// Create HTTP client
-	client, err := createHTTPClient(config.Proxy)
+	client, err := createHTTPClient(config.Proxy, config.InsecureSkipVerify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating HTTP client: %s\n", err)
 		os.Exit(exitErrorCode)
@@ -125,10 +128,12 @@ func openFile(filename string) (*os.File, error) {
 	return os.Open(filename)
 }
 
-func createHTTPClient(proxyURL string) (*http.Client, error) {
+func createHTTPClient(proxyURL string, insecureSkipVerify bool) (*http.Client, error) {
 	transport := &http.Transport{
-		// Default: Verify TLS certificates for security.
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: insecureSkipVerify,
+			MinVersion:         tls.VersionTLS12,
+		},
 	}
 
 	if proxyURL != "" {
@@ -159,8 +164,6 @@ func fetchHostInfo(client *http.Client, ip string) *Host {
 	}
 
 	req.Header.Set("User-Agent", defaultUserAgent)
-	// Let the server decide encoding. We won't force Brotli.
-	// req.Header.Set("Accept-Encoding", "br")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -170,8 +173,6 @@ func fetchHostInfo(client *http.Client, ip string) *Host {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Non-200 means we got no data or an error from the server.
-		// We'll just skip this IP.
 		fmt.Fprintf(os.Stderr, "Warning: Non-200 status for %s: %d\n", ip, resp.StatusCode)
 		return nil
 	}
