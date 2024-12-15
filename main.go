@@ -38,38 +38,46 @@ type Config struct {
 	Filename           string
 	Concurrency        int
 	InsecureSkipVerify bool
+	Verbose            bool
 }
 
 func main() {
-	// Parse command-line arguments
-	output := flag.String("output", "shell", "Output format: shell, ndjson, json")
-	proxy := flag.String("proxy", "", "Proxy URI (HTTP, HTTPS or SOCKS)")
-	filename := flag.String("filename", "", "File containing an IP per line. Use '-' for stdin.")
-	concurrency := flag.Int("concurrency", defaultConcurrency, "Number of concurrent lookups")
-	insecure := flag.Bool("insecure-skip-verify", false, "Skip TLS certificate verification (NOT RECOMMENDED)")
+	var config Config
+	verbose := flag.Bool("verbose", false, "Enable verbose output")
+	flag.BoolVar(verbose, "v", false, "(alias for -verbose)")
+
+	flag.StringVar(&config.Filename, "filename", "", "File containing an IP per line. Use '-' for stdin.")
+	flag.StringVar(&config.Filename, "f", "", "(alias for -filename)")
+
+	flag.StringVar(&config.OutputFormat, "output", "shell", "Output format: shell, ndjson, json")
+	flag.StringVar(&config.OutputFormat, "o", "shell", "(alias for -output)")
+
+	flag.StringVar(&config.Proxy, "proxy", "", "Proxy URI (HTTP, HTTPS or SOCKS)")
+	flag.StringVar(&config.Proxy, "p", "", "(alias for -proxy)")
+
+	flag.IntVar(&config.Concurrency, "concurrency", defaultConcurrency, "Number of concurrent lookups")
+	flag.IntVar(&config.Concurrency, "c", defaultConcurrency, "(alias for -concurrency)")
+
+	flag.BoolVar(&config.InsecureSkipVerify, "insecure", false, "Skip TLS certificate verification (NOT RECOMMENDED)")
+	flag.BoolVar(&config.InsecureSkipVerify, "i", false, "(alias for -insecure)")
+
 	flag.Parse()
 
-	if *filename == "" {
+	// If the short alias was used, it will overwrite the long version if provided after it.
+	// After parsing, ensure all alias logic is handled:
+	config.Verbose = *verbose
+
+	if config.Filename == "" {
 		fmt.Fprintln(os.Stderr, "Error: Filename is required")
 		os.Exit(exitErrorCode)
 	}
 
-	config := Config{
-		OutputFormat:       *output,
-		Proxy:              *proxy,
-		Filename:           *filename,
-		Concurrency:        *concurrency,
-		InsecureSkipVerify: *insecure,
-	}
-
-	// Create HTTP client
 	client, err := createHTTPClient(config.Proxy, config.InsecureSkipVerify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating HTTP client: %s\n", err)
 		os.Exit(exitErrorCode)
 	}
 
-	// Open file or use stdin
 	file, err := openFile(config.Filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening file: %s\n", err)
@@ -83,13 +91,12 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	// Start workers
 	for i := 0; i < config.Concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for ip := range ipCh {
-				host := fetchHostInfo(client, ip)
+				host := fetchHostInfo(client, ip, config.Verbose)
 				if host != nil {
 					resultCh <- host
 				}
@@ -97,27 +104,26 @@ func main() {
 		}()
 	}
 
-	// Close resultCh after all workers are done
 	go func() {
 		wg.Wait()
 		close(resultCh)
 	}()
 
-	// Feed IPs to the workers
 	go func() {
 		for scanner.Scan() {
 			ip := scanner.Text()
 			if isValidIP(ip) {
 				ipCh <- ip
+			} else if config.Verbose {
+				fmt.Fprintf(os.Stderr, "Skipping invalid IP: %s\n", ip)
 			}
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && config.Verbose {
 			fmt.Fprintf(os.Stderr, "Error reading input: %s\n", err)
 		}
 		close(ipCh)
 	}()
 
-	// Process results and print according to the requested output format
 	processResults(resultCh, config.OutputFormat)
 }
 
@@ -155,7 +161,7 @@ func isValidIP(ip string) bool {
 	return net.ParseIP(ip) != nil
 }
 
-func fetchHostInfo(client *http.Client, ip string) *Host {
+func fetchHostInfo(client *http.Client, ip string, verbose bool) *Host {
 	url := internetDBURL + ip
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -167,19 +173,25 @@ func fetchHostInfo(client *http.Client, ip string) *Host {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching %s: %s\n", ip, err)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Error fetching %s: %s\n", ip, err)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Warning: Non-200 status for %s: %d\n", ip, resp.StatusCode)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Warning: Non-200 status for %s: %d\n", ip, resp.StatusCode)
+		}
 		return nil
 	}
 
 	var host Host
 	if err := json.NewDecoder(resp.Body).Decode(&host); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing JSON for %s: %s\n", ip, err)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Error parsing JSON for %s: %s\n", ip, err)
+		}
 		return nil
 	}
 	return &host
