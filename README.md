@@ -37,20 +37,33 @@ This tool provides a high-performance solution to enrich IP address information 
 Run the tool with the following options:
 
 #### **Command-Line Arguments**
-- `-filename`: Path to the file containing IPs (one IP per line). Use `-` to read from stdin.
-- `-output`: Output format (`shell`, `json`, or `ndjson`).
-- `-proxy`: Proxy URL for requests (HTTP/HTTPS/SOCKS).
+- `--filename`, `-f`: Path to the file containing IPs (one IP per line). Use `-` to read from stdin.
+- `--output`, `-o`: Output format (`shell`, `json`, or `ndjson`).
+- `--proxy`, `-p`: Proxy URL for requests (HTTP/HTTPS/SOCKS).
+- `--concurrency`, `-c`: Number of concurrent lookups (default: 10).
+- `--insecure`, `-i`: Skip TLS certificate verification (NOT RECOMMENDED).
+- `--verbose`, `-v`: Enable verbose output (prints errors/warnings to stderr).
+
+Use `--help` or `-h` to display all available options.
 
 #### **Example Commands**
-- **Basic IP Lookup**:
+- **Basic IP Lookup (JSON Output)**:
   ```bash
-  ./gorich -filename ips.txt -output json
+  ./gorich -f ips.txt -o json
   ```
-- **With Proxy Support**:
+- **With Proxy Support (NDJSON Output)**:
   ```bash
-  ./gorich -filename ips.txt -proxy http://localhost:8080 -output ndjson
+  ./gorich -f ips.txt -p http://localhost:8080 -o ndjson
   ```
-- **Streaming Input from stdin**:
+- **Streaming Input from stdin (Shell Output)**:
   ```bash
-  cat ips.txt | ./gorich -filename - -output shell
+  cat ips.txt | ./gorich -f - -o shell
+  ```
+- **Increase Concurrency and Enable Verbose Logging**:
+  ```bash
+  ./gorich -f ips.txt -o json -c 20 -v
+  ```
+- **Skipping TLS Verification (Not Recommended)**:
+  ```bash
+  ./gorich -f ips.txt -o shell -i
   ```
